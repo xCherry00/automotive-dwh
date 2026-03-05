@@ -1,0 +1,123 @@
+﻿AUTOMOTIVE-DWH - PROJECT OVERVIEW
+
+1. PROJECT GOAL
+This project builds a local Data Warehouse (DWH) for an automotive parts store.
+Its main goal is to process daily transactional CSV data and provide analytics-ready outputs for business reporting.
+
+The project demonstrates:
+- end-to-end ETL pipeline,
+- layered data architecture,
+- star schema modeling,
+- incremental loading,
+- data quality controls,
+- BI-readiness (for example Metabase).
+
+2. ARCHITECTURE AND DATA LAYERS
+Data flow:
+CSV (incoming) -> RAW -> STG -> DWH -> MARTS
+
+- RAW: source data loaded 1:1, with minimal transformation.
+- STG: cleaned, standardized, and deduplicated data.
+- DWH: star schema with dimensions and facts for stable analytics.
+- MARTS: business-facing reporting views.
+
+3. INPUT DATA
+For each batch date, the pipeline expects a folder:
+data/incoming/YYYY-MM-DD/
+
+With exactly 4 files:
+- customers.csv
+- products.csv
+- orders.csv
+- order_items.csv
+
+Files can be:
+- delivered manually,
+- or generated with generate_data.py.
+
+4. MAIN COMPONENTS
+- main.py: pipeline orchestrator.
+- etl/extract.py: validates required batch files.
+- etl/load.py: loads CSV files into RAW using COPY.
+- etl/transform.py: STG transforms, DWH load, MARTS publish.
+- etl/utils.py: config loading, DB connection, SQL helpers, logging.
+- database/ddl/*.sql: schema and table definitions.
+- database/views/reporting_layer.sql: reporting view definitions.
+- tests/dq_checks.sql: SQL data quality checks.
+
+5. EXECUTION ORDER (STEP BY STEP)
+Step 1: Start PostgreSQL (Docker)
+- The database container runs locally (port 5433).
+
+Step 2: Prepare daily input data
+- Data is generated or provided in data/incoming/<date>.
+
+Step 3: Run pipeline (main.py)
+- Optional --init-db executes DDL and prepares structures.
+- A RUNNING entry is inserted into etl.etl_run_log.
+- The pipeline validates all 4 required input files.
+
+Step 4: LOAD into RAW
+- Data is loaded as-is into raw.* tables.
+- Technical metadata is added: batch_date, ingested_at.
+
+Step 5: TRANSFORM into STG
+- Type casting (numeric/date/timestamp).
+- Standardization of text values (status/channel/segment).
+- Deduplication with latest-record logic.
+- Re-load for batch_date: previous STG rows for that date are deleted before insert.
+
+Step 6: LOAD into DWH (star schema)
+- Dimensions: dim_date, dim_channel, dim_geography, dim_customer, dim_product.
+- Facts: fact_orders, fact_order_items.
+- UPSERT by natural keys (order_nk, order_item_nk, customer_nk, part_sku).
+- Derived metrics: gross_amount, net_amount, margin_amount.
+
+Step 7: Publish MARTS
+- Reporting views are created/refreshed, including:
+  - marts.daily_sales
+  - marts.top_parts
+  - marts.margin_by_category
+  - marts.cohort_retention
+  - marts.rfm_segments
+
+Step 8: Close run and audit
+- Final status (SUCCESS/FAILED) is written to etl.etl_run_log.
+- Duration, loaded rows, and optional error message are stored.
+
+Step 9: Data Quality checks
+- tests/dq_checks.sql validates referential integrity, duplicates, nulls in keys, and control totals.
+
+6. INCREMENTAL LOGIC
+- RAW: appends incoming daily batches (tracked by batch_date).
+- STG: processes per batch_date with cleaning and deduplication.
+- DWH: upsert behavior (update existing + insert new records).
+
+This enables reliable daily runs without full rebuilds.
+
+7. DAILY OPERATIONS
+- Generate or provide 4 CSV files for the date.
+- Run run_all.ps1 or main.py.
+- Check etl_run_log and DQ results.
+- Query marts.* in SQL or through Metabase on localhost.
+
+8. PORTFOLIO VALUE
+This project demonstrates practical data engineering skills:
+- layered DWH design,
+- robust ETL with logging and error handling,
+- star schema analytics modeling,
+- business metrics prepared for dashboards,
+- production mindset: quality, auditability, and incremental processing.
+
+9. EXAMPLE COMMANDS
+First day (init):
+- .\run_all.ps1 -Date 2026-03-05 -Profile dev -InitDb
+
+Next day (incremental):
+- .\run_all.ps1 -Date 2026-03-06 -Profile dev
+
+Manual alternative:
+- python .\generate_data.py --date 2026-03-06 --profile dev --output-root data/incoming
+- python .\main.py --date 2026-03-06
+
+End of document.

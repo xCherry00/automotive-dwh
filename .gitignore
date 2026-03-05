@@ -1,0 +1,26 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Local config with credentials
+config.yaml
+
+# Local data batches
+/data/incoming/**
+/data/archive/**
+!/data/incoming/.gitkeep
+!/data/archive/.gitkeep
+
+# Logs and temp
+*.log
+*.tmp
+.DS_Store
+Thumbs.db

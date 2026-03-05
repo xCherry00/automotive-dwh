@@ -1,0 +1,14 @@
+﻿database:
+  host: localhost
+  port: 5433
+  dbname: automotive_dwh
+  user: automotive
+  password: CHANGE_ME
+
+paths:
+  incoming_root: data/incoming
+  archive_root: data/archive
+
+pipeline:
+  base_currency: PLN
+  batch_hour: "02:00"

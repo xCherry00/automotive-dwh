@@ -1,0 +1,123 @@
+﻿AUTOMOTIVE-DWH - OMOWIENIE PROJEKTU
+
+1. CEL PROJEKTU
+Projekt buduje lokalna hurtownie danych (Data Warehouse) dla sklepu z czesciami samochodowymi.
+Glowny cel to codzienne przetwarzanie danych transakcyjnych z CSV i udostepnienie gotowych danych do analizy biznesowej.
+
+Projekt pokazuje:
+- pipeline ETL end-to-end,
+- warstwowa architekture danych,
+- model gwiazdy,
+- incremental loading,
+- kontrole jakosci danych,
+- gotowosc do raportowania w narzedziu BI (np. Metabase).
+
+2. ARCHITEKTURA I WARSTWY DANYCH
+Przeplyw danych:
+CSV (incoming) -> RAW -> STG -> DWH -> MARTS
+
+- RAW: surowe dane 1:1 ze zrodel, bez logiki biznesowej.
+- STG: dane po czyszczeniu, deduplikacji i standaryzacji.
+- DWH: model gwiazdy (wymiary + fakty) do stabilnej analityki.
+- MARTS: gotowe widoki raportowe dla biznesu.
+
+3. DANE WEJSCIOWE
+Dla kazdego dnia pipeline oczekuje folderu:
+data/incoming/YYYY-MM-DD/
+
+I dokladnie 4 plikow:
+- customers.csv
+- products.csv
+- orders.csv
+- order_items.csv
+
+Pliki mozna:
+- dostarczyc recznie,
+- albo wygenerowac skryptem generate_data.py.
+
+4. GLOWNE KOMPONENTY
+- main.py: orchestrator calego pipeline.
+- etl/extract.py: walidacja obecnosci plikow batcha.
+- etl/load.py: ladowanie CSV do RAW przez COPY.
+- etl/transform.py: transformacje STG, ladowanie DWH, publikacja MARTS.
+- etl/utils.py: konfiguracja, polaczenie DB, helpery SQL/logowanie.
+- database/ddl/*.sql: definicje schematow i tabel.
+- database/views/reporting_layer.sql: definicje widokow raportowych.
+- tests/dq_checks.sql: SQL-owe testy jakosci danych.
+
+5. KOLEJNOSC WYKONANIA (KROK PO KROKU)
+Krok 1: Start bazy PostgreSQL (Docker)
+- Uruchamiany jest kontener bazy (port 5433).
+
+Krok 2: Przygotowanie danych dziennych
+- Generator lub wlasne CSV trafiaja do data/incoming/<date>.
+
+Krok 3: Uruchomienie pipeline (main.py)
+- Opcjonalnie --init-db: wykonanie DDL i przygotowanie struktur.
+- Tworzony jest wpis RUNNING w etl.etl_run_log.
+- Walidacja: czy sa wszystkie 4 pliki wejsciowe.
+
+Krok 4: LOAD do RAW
+- Dane ladowane sa as-is do tabel raw.*.
+- Dodawane sa metadane techniczne: batch_date, ingested_at.
+
+Krok 5: TRANSFORM do STG
+- Casty typow (liczby, daty).
+- Normalizacja wartosci tekstowych (np. statusy, kanal, segment).
+- Deduplikacja po kluczach biznesowych z wyborami latest record.
+- Re-load dla batch_date: przed insert kasowany jest poprzedni STG dla tej daty.
+
+Krok 6: LOAD do DWH (model gwiazdy)
+- Wymiary: dim_date, dim_channel, dim_geography, dim_customer, dim_product.
+- Fakty: fact_orders, fact_order_items.
+- UPSERT po kluczach naturalnych (np. order_nk, order_item_nk, customer_nk, part_sku).
+- Liczone metryki: gross_amount, net_amount, margin_amount.
+
+Krok 7: Publikacja MARTS
+- Tworzone/odswiezane widoki raportowe, m.in.:
+  - marts.daily_sales
+  - marts.top_parts
+  - marts.margin_by_category
+  - marts.cohort_retention
+  - marts.rfm_segments
+
+Krok 8: Zamkniecie runa i audyt
+- Status SUCCESS/FAILED trafia do etl.etl_run_log.
+- Zapisywany jest czas trwania, liczba rekordow i ewentualny blad.
+
+Krok 9: Data Quality
+- tests/dq_checks.sql sprawdza m.in. referencyjnosc, duplikaty, null-e w kluczach i kontrole sum.
+
+6. LOGIKA INCREMENTAL
+- RAW: dopisywanie kolejnych batchy (historycznie po batch_date).
+- STG: przetwarzanie per batch_date z deduplikacja.
+- DWH: upsert (aktualizacja istniejacych rekordow i insert nowych).
+
+Dzieki temu pipeline mozna uruchamiac codziennie bez recznego przebudowywania wszystkiego od zera.
+
+7. JAK Z TEGO KORZYSTAC OPERACYJNIE
+- Kazdego dnia generujesz lub dostarczasz 4 pliki CSV.
+- Uruchamiasz run_all.ps1 albo main.py.
+- Sprawdzasz etl_run_log i DQ checks.
+- Odczytujesz wyniki z marts.* w SQL lub przez Metabase na localhost.
+
+8. WARTOSC PORTFOLIO
+Projekt demonstruje praktyczne podejscie data engineering:
+- projektowanie warstw DWH,
+- robust ETL z logowaniem i obsluga bledow,
+- modelowanie analityczne (star schema),
+- metryki biznesowe gotowe pod dashboarding,
+- mindset produkcyjny: data quality + audyt + incremental.
+
+9. PRZYKLADOWE KOMENDY
+Pierwszy dzien (init):
+- .\run_all.ps1 -Date 2026-03-05 -Profile dev -InitDb
+
+Kolejny dzien:
+- .\run_all.ps1 -Date 2026-03-06 -Profile dev
+
+Alternatywnie recznie:
+- python .\generate_data.py --date 2026-03-06 --profile dev --output-root data/incoming
+- python .\main.py --date 2026-03-06
+
+Koniec dokumentu.
